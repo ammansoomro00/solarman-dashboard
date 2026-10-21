@@ -242,25 +242,6 @@
   }
 }
 
-/* Flow diagram: pulses travel along a pathLength=100 line, 3 per pattern. */
-@keyframes flow-in {
-  from {
-    stroke-dashoffset: 0;
-  }
-  to {
-    stroke-dashoffset: -100;
-  }
-}
-
-@keyframes flow-out {
-  from {
-    stroke-dashoffset: 0;
-  }
-  to {
-    stroke-dashoffset: 100;
-  }
-}
-
 @keyframes orbit {
   to {
     transform: rotate(360deg);

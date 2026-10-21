@@ -63,7 +63,6 @@ export default async function OverviewPage() {
           measuredAt={live.measuredAt}
           sun={sun}
           timeZone={station.timezone}
-          capacityKw={station.capacityKw}
         />,
     },
     battery: {

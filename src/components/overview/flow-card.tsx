@@ -3,8 +3,8 @@ import type { Story } from "@/lib/energy/story";
 import type { SunTimes } from "@/lib/energy/sun";
 import { cn } from "@/lib/utils";
 import { Card } from "./card";
-import { FlowDiagram } from "./flow-diagram";
-import { SelfPoweredDial } from "./self-powered-dial";
+import { FlowScene } from "./flow-scene";
+import { PowerMix } from "./power-mix";
 
 const TONE_COLOR: Record<Story["tone"], string> = {
   sun: "var(--sun)",
@@ -29,7 +29,6 @@ export function FlowCard({
   measuredAt,
   sun,
   timeZone,
-  capacityKw,
   className,
 }: {
   reading: PowerReading;
@@ -38,7 +37,6 @@ export function FlowCard({
   measuredAt: Date;
   sun: SunTimes | null;
   timeZone: string;
-  capacityKw: number | null;
   className?: string;
 }) {
   const time = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone });
@@ -47,50 +45,39 @@ export function FlowCard({
   const homeIn = f.solarToHome + f.batteryToHome + f.gridToHome;
   const mix = homeIn > 0 ? { sun: f.solarToHome / homeIn, battery: f.batteryToHome / homeIn, grid: f.gridToHome / homeIn } : { sun: 0, battery: 0, grid: 0 };
 
-  // "Power cut — running on sunshine": the second half gets the tone's colour.
+  // "Power cut — running on sunshine": the second half is set in champagne.
   const [lead, rest] = story.headline.includes(" — ") ? story.headline.split(" — ") : [story.headline, null];
 
   return (
     <Card className={cn("relative isolate flex flex-col overflow-hidden p-0", className)} aria-labelledby="flow-title">
-      {/* Tone wash in the corner */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -top-40 -left-32 -z-10 size-[460px] rounded-full opacity-[0.09] blur-3xl"
-        style={{ background: tone }}
-      />
+      <div aria-hidden className="pointer-events-none absolute -top-48 left-1/2 -z-10 h-[420px] w-[720px] -translate-x-1/2 rounded-full opacity-[0.07] blur-3xl" style={{ background: tone }} />
 
-      <div className="flex flex-col gap-5 p-6 sm:p-8 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex flex-col gap-6 px-6 pt-6 sm:px-8 sm:pt-8 xl:flex-row xl:items-end xl:justify-between">
         <div className="max-w-xl min-w-0">
-          <p className="border-line bg-surface-2/70 text-ink-2 inline-flex items-center gap-2 rounded-full border py-1 pr-3 pl-2 text-[11px] font-bold tracking-[0.1em] uppercase backdrop-blur">
+          <p className="text-ink-3 flex items-center gap-2 text-[11px] font-bold tracking-[0.14em] uppercase">
             <span className="relative grid size-2 place-items-center">
               <span className="absolute inline-flex size-full animate-ping rounded-full opacity-60" style={{ background: tone }} />
               <span className="relative size-2 rounded-full" style={{ background: tone }} />
             </span>
             Live · {TONE_LABEL[story.tone]}
           </p>
-          <h2 id="flow-title" className="sm:text-hero mt-4 text-[28px] leading-[1.08] font-bold tracking-tight text-balance">
+          <h2 id="flow-title" className="sm:text-hero mt-3 text-[28px] leading-[1.08] font-bold tracking-tight text-balance">
             {lead}
             {rest && (
               <>
                 <span className="text-ink-3"> — </span>
-                <span
-                  className="bg-clip-text text-transparent"
-                  style={{ backgroundImage: "linear-gradient(100deg, var(--gilt-1), var(--gilt-2))" }}
-                >
-                  {rest}
-                </span>
+                <span className="bg-[linear-gradient(100deg,var(--gilt-1),var(--gilt-2))] bg-clip-text text-transparent">{rest}</span>
               </>
             )}
           </h2>
           <p className="text-ink-2 mt-3 text-[15px] leading-relaxed text-pretty">{story.detail}</p>
         </div>
 
-        <SelfPoweredDial selfPowered={flow.selfPowered} mix={mix} />
+        <PowerMix selfPowered={flow.selfPowered} mix={mix} />
       </div>
 
-      <div className="border-line relative flex flex-1 items-center justify-center border-t px-4 pt-8 pb-5 sm:px-8">
-        <div aria-hidden className="pointer-events-none absolute inset-0 [background-image:radial-gradient(var(--line)_1px,transparent_1px)] [background-size:22px_22px] opacity-60 [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]" />
-        <FlowDiagram reading={reading} flow={flow} capacityKw={capacityKw} />
+      <div className="flex flex-1 flex-col px-3 pt-4 pb-4 sm:px-5">
+        <FlowScene reading={reading} flow={flow} sun={sun} />
       </div>
 
       <div className="border-line text-ink-3 flex flex-wrap items-center justify-between gap-3 border-t px-6 py-3 text-xs sm:px-8">
