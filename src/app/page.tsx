@@ -1,103 +1,117 @@
-import Image from "next/image";
+import Link from "next/link";
+import { BatteryCard } from "@/components/overview/battery-card";
+import { CurveCard } from "@/components/overview/curve-card";
+import { EmptyOverview } from "@/components/overview/empty-overview";
+import { FlowCard } from "@/components/overview/flow-card";
+import { SavingsCard } from "@/components/overview/savings-card";
+import { TodayCard } from "@/components/overview/today-card";
+import { WeekCard } from "@/components/overview/week-card";
+import { Greeting } from "@/components/shell/greeting";
+import { Reveal } from "@/components/ui/reveal";
+import { getOverview, getPreferences, getStation } from "@/lib/data/queries";
+import { batteryEta, computeFlows, type PowerReading } from "@/lib/energy/flow";
+import { insightsFor, sumTotals } from "@/lib/energy/insights";
+import { describe } from "@/lib/energy/story";
+import { sunTimes } from "@/lib/energy/sun";
+import { type CardId, normalizeCards } from "@/lib/preferences";
+import { localParts, startOfLocalDay } from "@/lib/time";
 
-export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
+export default async function OverviewPage() {
+  const station = await getStation();
+  const [overview, prefs] = await Promise.all([getOverview(station), getPreferences()]);
+  const { live } = overview;
+
+  const now = new Date();
+  const hour = localParts(now, station.timezone).hour;
+  const dateText = now.toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", timeZone: station.timezone });
+
+  const header = <Greeting hour={hour} dateText={dateText} />;
+
+  if (!live) {
+    return (
+      <>
+        {header}
+        <EmptyOverview />
+      </>
+    );
+  }
+
+  const reading: PowerReading = {
+    solarW: live.solarW,
+    homeW: live.homeW,
+    batteryW: live.batteryW,
+    gridW: live.gridW,
+    batteryPct: live.batteryPct,
+    gridAvailable: live.gridAvailable,
+  };
+  const flow = computeFlows(reading);
+  const sun = station.latitude !== null && station.longitude !== null ? sunTimes(now, station.latitude, station.longitude) : null;
+  const isDaylight = sun ? now > sun.sunrise && now < sun.sunset : hour >= 6 && hour < 18;
+  const story = describe(reading, flow, isDaylight);
+  const tariff = { pricePerUnit: prefs.pricePerUnit, sellPricePerUnit: prefs.sellPricePerUnit, co2KgPerUnit: prefs.co2KgPerUnit };
+  const weekInsights = insightsFor(sumTotals(overview.week), tariff);
+  const dayStart = startOfLocalDay(overview.today, station.timezone).getTime();
+
+  const cards: Record<CardId, { node: React.ReactNode; span: string }> = {
+    flow: {
+      span: "md:col-span-2 lg:col-span-8 lg:row-span-2",
+      node: <FlowCard
+          className="h-full"
+          reading={reading}
+          flow={flow}
+          story={story}
+          measuredAt={live.measuredAt}
+          sun={sun}
+          timeZone={station.timezone}
+          capacityKw={station.capacityKw}
+        />,
+    },
+    battery: {
+      span: "lg:col-span-4",
+      node: (
+        <BatteryCard
+          className="h-full"
+          pct={live.batteryPct}
+          state={flow.battery}
+          eta={batteryEta(reading, station.batteryKwh)}
+          capacityKwh={station.batteryKwh}
+          tempC={live.batteryTempC}
+          powerW={live.batteryW}
+          homeW={live.homeW}
         />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+      ),
+    },
+    today: { span: "lg:col-span-4", node: <TodayCard className="h-full" totals={overview.todayTotals} /> },
+    curve: {
+      span: "md:col-span-2 lg:col-span-8",
+      node: <CurveCard className="h-full" points={overview.samples} dayStart={dayStart} timeZone={station.timezone} />,
+    },
+    week: { span: "md:col-span-2 lg:col-span-4", node: <WeekCard className="h-full" days={overview.week} today={overview.today} /> },
+    savings: { span: "md:col-span-2 lg:col-span-12", node: <SavingsCard week={weekInsights} currency={prefs.currency} pricePerUnit={prefs.pricePerUnit} /> },
+  };
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const order = normalizeCards(prefs.overviewCards);
+
+  return (
+    <>
+      {header}
+      {order.length === 0 ? (
+        <div className="card grid place-items-center px-6 py-16 text-center">
+          <p className="font-semibold">All cards are hidden</p>
+          <p className="text-ink-2 mt-1 text-sm">Choose what to show on this page in Settings.</p>
+          <Link href="/settings#cards" className="mt-4 text-sm font-semibold underline underline-offset-4">
+            Choose cards
+          </Link>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      ) : (
+        <div className="grid grid-flow-row-dense grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-12 lg:gap-5">
+          {order.map((id, i) => (
+            <Reveal key={id} index={i} className={cards[id].span}>
+              {cards[id].node}
+            </Reveal>
+          ))}
+        </div>
+      )}
+    </>
   );
 }

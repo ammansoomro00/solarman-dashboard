@@ -1,26 +1,287 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens: "Daylight". Warm paper surfaces by day, deep night-sky by night.
+ * Series colors (sun / home / battery / power company) are validated for colour
+ * blindness in both modes (dataviz validator); they always appear with a label or icon.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --page: #f4f1e9;
+  --surface: #ffffff;
+  --surface-2: #faf8f3;
+  --surface-sunk: #efebe1;
+  --line: #e6e0d4;
+  --line-strong: #d6cfc0;
+  --ink: #1b1914;
+  --ink-2: #57524a;
+  --ink-3: #8a8478;
+  --focus: #1b1914;
+
+  --sun: #e09a12;
+  --sun-soft: #fdf1d6;
+  --sun-ink: #8a5a00;
+  --home: #1baf7a;
+  --home-soft: #dcf4ea;
+  --home-ink: #0b6b49;
+  --battery: #7c5cf0;
+  --battery-soft: #ece8fd;
+  --battery-ink: #5236c4;
+  --grid: #2a78d6;
+  --grid-soft: #e0ecfa;
+  --grid-ink: #1c5cab;
+
+  --good: #0ca30c;
+  --good-ink: #006300;
+  --warn: #fab219;
+  --warn-ink: #8a5a00;
+  --bad: #d03b3b;
+  --bad-ink: #a32222;
+
+  --shadow-card: 0 1px 2px rgb(27 25 20 / 0.04), 0 12px 32px -18px rgb(27 25 20 / 0.12);
+  --shadow-pop: 0 2px 6px rgb(27 25 20 / 0.06), 0 24px 48px -16px rgb(27 25 20 / 0.22);
+  --chart-grid: #ebe6db;
+
+  /* Accent for highlighted words and hero figures: deep ink into burnished gold. */
+  --gilt-1: #2a2419;
+  --gilt-2: #a8741c;
+}
+
+.dark {
+  --page: #0e1116;
+  --surface: #161a20;
+  --surface-2: #1b2028;
+  --surface-sunk: #11151a;
+  --line: #252b34;
+  --line-strong: #333a45;
+  --ink: #f1eee7;
+  --ink-2: #bab5aa;
+  --ink-3: #807b71;
+  --focus: #f1eee7;
+
+  --sun: #e9a53c;
+  --sun-soft: #2a2213;
+  --sun-ink: #f6cd85;
+  --home: #128a60;
+  --home-soft: #12261f;
+  --home-ink: #5fd3a6;
+  --battery: #8b6cff;
+  --battery-soft: #1e1a33;
+  --battery-ink: #b9a8ff;
+  --grid: #4b93ea;
+  --grid-soft: #142236;
+  --grid-ink: #8fbcf3;
+
+  --good-ink: #3fcb3f;
+  --warn-ink: #f6c453;
+  --bad-ink: #f08080;
+
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -18px rgb(0 0 0 / 0.6);
+  --shadow-pop: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 24px 48px -12px rgb(0 0 0 / 0.7);
+  --chart-grid: #222831;
+
+  /* Champagne: near-white into soft gold. */
+  --gilt-1: #fff8ec;
+  --gilt-2: #edc27a;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-sunk: var(--surface-sunk);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+
+  --color-sun: var(--sun);
+  --color-sun-soft: var(--sun-soft);
+  --color-sun-ink: var(--sun-ink);
+  --color-home: var(--home);
+  --color-home-soft: var(--home-soft);
+  --color-home-ink: var(--home-ink);
+  --color-battery: var(--battery);
+  --color-battery-soft: var(--battery-soft);
+  --color-battery-ink: var(--battery-ink);
+  --color-grid: var(--grid);
+  --color-grid-soft: var(--grid-soft);
+  --color-grid-ink: var(--grid-ink);
+
+  --color-good: var(--good);
+  --color-good-ink: var(--good-ink);
+  --color-warn: var(--warn);
+  --color-warn-ink: var(--warn-ink);
+  --color-bad: var(--bad);
+  --color-bad-ink: var(--bad-ink);
+
+  --radius-card: 1.5rem;
+  --radius-tile: 1.125rem;
+
+  --shadow-card: var(--shadow-card);
+  --shadow-pop: var(--shadow-pop);
+
+  --text-display: 3.5rem;
+  --text-display--line-height: 1;
+  --text-display--letter-spacing: -0.04em;
+  --text-hero: 2.25rem;
+  --text-hero--line-height: 1.05;
+  --text-hero--letter-spacing: -0.03em;
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  html.theme-transition,
+  html.theme-transition * {
+    transition:
+      background-color 280ms var(--ease-out-soft),
+      border-color 280ms var(--ease-out-soft),
+      color 200ms var(--ease-out-soft),
+      fill 280ms var(--ease-out-soft),
+      stroke 280ms var(--ease-out-soft) !important;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  ::selection {
+    background: var(--sun-soft);
+    color: var(--ink);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility card {
+  /* Frosted glass over the sky backdrop. */
+  background: color-mix(in oklab, var(--surface) 82%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+  border: 1px solid color-mix(in oklab, var(--line) 85%, transparent);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+/* Pointer spotlight + rim light, rendered by <Card>. */
+.card-spotlight,
+.card-rim {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 400ms var(--ease-out-soft);
+}
+.card-spotlight {
+  background: radial-gradient(520px circle at var(--mx, 50%) var(--my, 0%), color-mix(in oklab, var(--ink) 4.5%, transparent), transparent 55%);
+}
+.card-rim {
+  inset: -1px;
+  padding: 1px;
+  background: radial-gradient(280px circle at var(--mx, 50%) var(--my, 0%), color-mix(in oklab, var(--ink) 28%, transparent), transparent 70%);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.group\/card:hover > .card-spotlight,
+.group\/card:hover > .card-rim {
+  opacity: 1;
+}
+
+@utility eyebrow {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Flow diagram: pulses travel along a pathLength=100 line, 3 per pattern. */
+@keyframes flow-in {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+@keyframes flow-out {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: 100;
+  }
+}
+
+@keyframes orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Liquid surfaces: the wave path is two periods wide and slides by one. */
+@keyframes wave-slide {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes shimmer-sweep {
+  from {
+    transform: translateX(-120%) skewX(-18deg);
+  }
+  to {
+    transform: translateX(220%) skewX(-18deg);
+  }
 }

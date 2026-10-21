@@ -1,0 +1,191 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DataSource {
+  SOLARMAN
+  DEMO
+}
+
+enum DeviceKind {
+  INVERTER
+  BATTERY
+  LOGGER
+  METER
+  OTHER
+}
+
+enum DeviceStatus {
+  ONLINE
+  WARNING
+  OFFLINE
+}
+
+enum NoticeLevel {
+  INFO
+  WARNING
+  FAULT
+}
+
+/// One solar installation ("plant" in Solarman terms).
+model Station {
+  id           Int        @id @default(autoincrement())
+  source       DataSource
+  externalId   String /// Solarman stationId, or "demo"
+  name         String
+  capacityKw   Float
+  batteryKwh   Float? /// usable battery size, for "lasts about X hours" estimates
+  timezone     String     @default("Asia/Karachi")
+  address      String?
+  latitude     Float?
+  longitude    Float?
+  operatingSince DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  devices       Device[]
+  samples       PowerSample[]
+  dailyEnergy   DailyEnergy[]
+  monthlyEnergy MonthlyEnergy[]
+  notices       Notice[]
+  live          LiveStatus?
+  syncStates    SyncState[]
+
+  @@unique([source, externalId])
+}
+
+/// Latest "right now" picture of the system, overwritten on each refresh.
+model LiveStatus {
+  stationId        Int      @id
+  station          Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  measuredAt       DateTime /// when the logger took the reading
+  solarW           Float
+  homeW            Float
+  batteryW         Float /// > 0 battery is powering the home, < 0 battery is charging
+  gridW            Float /// > 0 buying from the power company, < 0 selling to it
+  batteryPct       Float?
+  gridAvailable    Boolean? /// false during a power cut
+  todaySolarKwh    Float?
+  todayHomeKwh     Float?
+  todayBoughtKwh   Float?
+  todaySoldKwh     Float?
+  todayChargedKwh  Float?
+  todayDischargedKwh Float?
+  lifetimeSolarKwh Float?
+  lifetimeBoughtKwh Float?
+  lifetimeSoldKwh  Float?
+  inverterTempC    Float?
+  batteryTempC     Float?
+  updatedAt        DateTime @updatedAt
+}
+
+/// Five-minute power readings used for the "today" curve and history.
+model PowerSample {
+  stationId  Int
+  station    Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  measuredAt DateTime
+  solarW     Float
+  homeW      Float
+  batteryW   Float
+  gridW      Float
+  batteryPct Float?
+
+  @@id([stationId, measuredAt])
+  @@index([stationId, measuredAt(sort: Desc)])
+}
+
+/// Energy totals per local calendar day (kWh = "units").
+model DailyEnergy {
+  stationId     Int
+  station       Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  date          DateTime @db.Date
+  solarKwh      Float
+  homeKwh       Float
+  boughtKwh     Float
+  soldKwh       Float
+  chargedKwh    Float
+  dischargedKwh Float
+  updatedAt     DateTime @updatedAt
+
+  @@id([stationId, date])
+}
+
+/// Energy totals per calendar month; covers months older than the daily history.
+model MonthlyEnergy {
+  stationId     Int
+  station       Station  @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  year          Int
+  month         Int
+  solarKwh      Float
+  homeKwh       Float
+  boughtKwh     Float
+  soldKwh       Float
+  chargedKwh    Float
+  dischargedKwh Float
+  updatedAt     DateTime @updatedAt
+
+  @@id([stationId, year, month])
+}
+
+model Device {
+  id          Int          @id @default(autoincrement())
+  stationId   Int
+  station     Station      @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  serial      String
+  kind        DeviceKind
+  status      DeviceStatus
+  model       String?
+  lastSeenAt  DateTime?
+  /// Selected readings in plain language: [{ label, value, unit }]
+  details     Json?
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([stationId, serial])
+}
+
+/// Alerts from the inverter plus events the app detects (power cuts, low battery...).
+model Notice {
+  id         Int         @id @default(autoincrement())
+  stationId  Int
+  station    Station     @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  dedupeKey  String /// stops the same event being stored twice
+  level      NoticeLevel
+  title      String
+  body       String
+  occurredAt DateTime
+  readAt     DateTime?
+  createdAt  DateTime    @default(now())
+
+  @@unique([stationId, dedupeKey])
+  @@index([stationId, occurredAt(sort: Desc)])
+}
+
+/// Throttle + bookkeeping for each kind of background refresh.
+model SyncState {
+  stationId     Int
+  station       Station   @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  task          String /// "live" | "devices" | "daily" | "alerts"
+  lastAttemptAt DateTime?
+  lastSuccessAt DateTime?
+  lastError     String?
+
+  @@id([stationId, task])
+}
+
+/// Single-row user preferences.
+model Preference {
+  id               Int      @id @default(1)
+  pricePerUnit     Float    @default(60) /// what one unit (kWh) costs from the power company
+  sellPricePerUnit Float    @default(20) /// what you earn per unit sold back
+  currency         String   @default("PKR")
+  co2KgPerUnit     Float    @default(0.45) /// pollution avoided per unit of solar
+  theme            String   @default("system") /// "light" | "dark" | "system"
+  /// Overview cards in display order; anything missing is hidden.
+  overviewCards    String[] @default(["flow", "battery", "today", "curve", "week", "savings"])
+  updatedAt        DateTime @updatedAt
+}

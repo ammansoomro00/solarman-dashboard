@@ -1,0 +1,540 @@
+{
+  "info": {
+    "name": "Solarman OpenAPI",
+    "description": "Solarman OpenAPI (globalapi.solarmanpv.com).\n\nSetup:\n1. Import this collection and `Solarman.postman_environment.json`, then select the environment.\n2. In the environment, set `password` (plain text, it gets SHA-256 hashed automatically) or `password_sha256` (already hashed, lowercase).\n3. Run **Auth / Get Access Token**. You can skip it: every other request fetches a token automatically when there isn't one or it has expired.\n4. Run **Stations / List Stations**, then **Stations / Station Devices**. They save `stationId` and `deviceSn` for the remaining requests.\n\nAll endpoints are POST with a JSON body and an `Authorization: bearer <token>` header (added by the collection pre-request script).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Date helpers used by the history/alert requests. Daily ranges are capped at 30 days and monthly at 12 months by the API.",
+          "const pad = n => String(n).padStart(2, '0');",
+          "const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;",
+          "const now = new Date();",
+          "const nowTs = Math.floor(now.getTime() / 1000);",
+          "pm.variables.set('_today', ymd(now));",
+          "pm.variables.set('_days29Ago', ymd(new Date(now.getTime() - 29 * 86400000)));",
+          "pm.variables.set('_month', `${now.getFullYear()}-${pad(now.getMonth() + 1)}`);",
+          "pm.variables.set('_yearStart', `${now.getFullYear()}-01`);",
+          "pm.variables.set('_year', String(now.getFullYear()));",
+          "pm.variables.set('_nowTs', String(nowTs));",
+          "pm.variables.set('_dayAgoTs', String(nowTs - 86400));",
+          "pm.variables.set('_weekAgoTs', String(nowTs - 7 * 86400));",
+          "",
+          "// Solarman wants the password as a lowercase SHA-256 hex string",
+          "const preHashed = pm.environment.get('password_sha256');",
+          "const plain = pm.environment.get('password');",
+          "const passwordHash = preHashed ? preHashed.toLowerCase() : (plain ? CryptoJS.SHA256(plain).toString(CryptoJS.enc.Hex) : '');",
+          "pm.variables.set('_passwordHash', passwordHash);",
+          "",
+          "const isTokenRequest = pm.request.url.getPath().includes('/account/v1.0/token');",
+          "const setAuthHeader = token => pm.request.headers.upsert({ key: 'Authorization', value: `bearer ${token}` });",
+          "",
+          "if (!isTokenRequest) {",
+          "    const token = pm.environment.get('access_token');",
+          "    const expiresAt = Number(pm.environment.get('token_expires_at') || 0);",
+          "",
+          "    if (token && Date.now() < expiresAt - 60000) {",
+          "        setAuthHeader(token);",
+          "    } else {",
+          "        // No token or it expired: fetch a fresh one before sending this request",
+          "        const body = {",
+          "            appSecret: pm.environment.get('appSecret'),",
+          "            email: pm.environment.get('email'),",
+          "            password: passwordHash",
+          "        };",
+          "        const orgId = pm.environment.get('orgId');",
+          "        if (orgId) body.orgId = Number(orgId);",
+          "",
+          "        pm.sendRequest({",
+          "            url: `${pm.environment.get('baseUrl')}/account/v1.0/token?appId=${pm.environment.get('appId')}&language=en`,",
+          "            method: 'POST',",
+          "            header: { 'Content-Type': 'application/json' },",
+          "            body: { mode: 'raw', raw: JSON.stringify(body) }",
+          "        }, (err, res) => {",
+          "            if (err) return console.error('Token request failed', err);",
+          "            const json = res.json();",
+          "            if (!json.access_token) return console.error('Token request rejected', json);",
+          "            pm.environment.set('access_token', json.access_token);",
+          "            pm.environment.set('token_expires_at', String(Date.now() + Number(json.expires_in || 0) * 1000));",
+          "            setAuthHeader(json.access_token);",
+          "        });",
+          "    }",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+          "pm.test('API success', () => {",
+          "    const json = pm.response.json();",
+          "    pm.expect(json.success, `code ${json.code}: ${json.msg}`).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Get Access Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.test('Token issued', () => pm.expect(json.access_token, json.msg).to.be.a('string'));",
+                  "if (json.access_token) {",
+                  "    pm.environment.set('access_token', json.access_token);",
+                  "    pm.environment.set('token_expires_at', String(Date.now() + Number(json.expires_in || 0) * 1000));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appSecret\": \"{{appSecret}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{_passwordHash}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/account/v1.0/token?appId={{appId}}&language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["account", "v1.0", "token"],
+              "query": [
+                { "key": "appId", "value": "{{appId}}" },
+                { "key": "language", "value": "en" }
+              ]
+            },
+            "description": "Personal-account token. appId goes in the URL; appSecret, email and the SHA-256 password go in the body. Saves `access_token` and `token_expires_at` to the environment."
+          }
+        },
+        {
+          "name": "Get Org Token (business accounts)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.test('Token issued', () => pm.expect(json.access_token, json.msg).to.be.a('string'));",
+                  "if (json.access_token) {",
+                  "    pm.environment.set('access_token', json.access_token);",
+                  "    pm.environment.set('token_expires_at', String(Date.now() + Number(json.expires_in || 0) * 1000));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appSecret\": \"{{appSecret}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{_passwordHash}}\",\n  \"orgId\": {{orgId}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/account/v1.0/token?appId={{appId}}&language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["account", "v1.0", "token"],
+              "query": [
+                { "key": "appId", "value": "{{appId}}" },
+                { "key": "language", "value": "en" }
+              ]
+            },
+            "description": "Doc 2.1. Without `orgId` the token sees what you see on SOLARMAN Smart (home.solarmanpv.com). With `orgId` it sees SOLARMAN Business (pro.solarmanpv.com). Run **Account Merchant Relationship** first, copy a `companyId` from `orgInfoList` into the `orgId` environment variable, then run this. While `orgId` is set, the automatic token refresh also requests a Business token."
+          }
+        },
+        {
+          "name": "Account Merchant Relationship (orgId lookup)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{baseUrl}}/account/v1.0/info?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["account", "v1.0", "info"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 2.2. Returns `orgInfoList` [{companyId, companyName, roleName}]: the merchants this account belongs to. On a plain SOLARMAN Smart account (like this one) it returns `2101006 invalid param`, which is expected: there's no merchant to look up."
+          }
+        },
+        {
+          "name": "Account Information",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": {
+              "raw": "{{baseUrl}}/account/v1.0/user-info?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["account", "v1.0", "user-info"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 2.5. Profile of the logged-in account (email, nickname, phoneNumber, lastLoginTime...)."
+          }
+        },
+        {
+          "name": "Remaining API Call Quota",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appId\": \"{{appId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/account/v1.0/balance?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["account", "v1.0", "balance"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 13. `total` = calls left on this App ID. This call itself uses one, so don't poll it."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stations",
+      "item": [
+        {
+          "name": "List Stations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const stations = pm.response.json().stationList || [];",
+                  "pm.test('Has stations', () => pm.expect(stations.length).to.be.above(0));",
+                  "if (stations.length) {",
+                  "    pm.environment.set('stationId', String(stations[0].id));",
+                  "    console.log('Saved stationId', stations[0].id, stations[0].name);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"page\": 1,\n  \"size\": 20\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/station/v1.0/list?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["station", "v1.0", "list"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 4.4. All plants (stations) on the account. Saves the first station's id as `stationId`. An empty or null `stationList` usually means the plant is on SOLARMAN Business and you need an org token (see Auth)."
+          }
+        },
+        {
+          "name": "Station Basic Info",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": {{stationId}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/station/v1.0/base?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["station", "v1.0", "base"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 4.1. Static plant details: installedCapacity, location, region.timezone, azimuth/tilt, currency, mergeElectricPrice, images."
+          }
+        },
+        {
+          "name": "Station Real-time Data",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": {{stationId}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/station/v1.0/realTime?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["station", "v1.0", "realTime"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 4.5. Current plant snapshot: generationPower, usePower, gridPower, purchasePower, wirePower, chargePower, dischargePower, batteryPower, batterySoc, irradiateIntensity, lastUpdateTime (Unix seconds)."
+          }
+        },
+        {
+          "name": "Station Devices",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const devices = pm.response.json().deviceListItems || [];",
+                  "pm.test('Has devices', () => pm.expect(devices.length).to.be.above(0));",
+                  "const inverter = devices.find(d => d.deviceType === 'INVERTER') || devices[0];",
+                  "if (inverter) {",
+                  "    pm.environment.set('deviceSn', inverter.deviceSn);",
+                  "    console.log('Saved deviceSn', inverter.deviceSn, inverter.deviceType);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": {{stationId}},\n  \"page\": 1,\n  \"size\": 20\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/station/v1.0/device?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["station", "v1.0", "device"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 4.2. Devices in the station (INVERTER, COLLECTOR, METER, BATTERY, MICRO_INVERTER...). Optional body field `deviceType` filters by type; `size` max 200. Saves the first inverter's serial as `deviceSn`. Use the inverter, not the logger (COLLECTOR): logger serials return an empty dataList."
+          }
+        },
+        {
+          "name": "Station History - Today (5-min frames)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": {{stationId}},\n  \"timeType\": 1,\n  \"startTime\": \"{{_today}}\",\n  \"endTime\": \"{{_today}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/station/v1.0/history?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["station", "v1.0", "history"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 4.3. timeType 1 = intraday frames for one day (yyyy-MM-dd). Power values only (generationPower, usePower, batterySoc...), no energy totals. Use it for the power curve chart."
+          }
+        },
+        {
+          "name": "Station History - Daily (last 30 days)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": {{stationId}},\n  \"timeType\": 2,\n  \"startTime\": \"{{_days29Ago}}\",\n  \"endTime\": \"{{_today}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/station/v1.0/history?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["station", "v1.0", "history"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "timeType 2 = one record per day (yyyy-MM-dd, max 30 days). Energy totals: generationValue, useValue, gridValue, buyValue, chargeValue, dischargeValue, plus ratios."
+          }
+        },
+        {
+          "name": "Station History - Monthly (this year)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": {{stationId}},\n  \"timeType\": 3,\n  \"startTime\": \"{{_yearStart}}\",\n  \"endTime\": \"{{_month}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/station/v1.0/history?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["station", "v1.0", "history"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "timeType 3 = one record per month (yyyy-MM, max 12 months)."
+          }
+        },
+        {
+          "name": "Station History - Yearly",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": {{stationId}},\n  \"timeType\": 4,\n  \"startTime\": \"2020\",\n  \"endTime\": \"{{_year}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/station/v1.0/history?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["station", "v1.0", "history"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "timeType 4 = one record per year (yyyy range)."
+          }
+        },
+        {
+          "name": "Station Alerts (last 30 days)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stationId\": {{stationId}},\n  \"startTime\": \"{{_days29Ago}}\",\n  \"endTime\": \"{{_today}}\",\n  \"page\": 1,\n  \"size\": 20\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/station/v1.0/alert?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["station", "v1.0", "alert"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 4.7. Alerts for every device in the plant (yyyy-MM-dd range). Returns `stationAlertItems` [{deviceSn, deviceType, showName, level (0 notice, 1 warning, 2 fault), influence, alertTime}]."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Devices",
+      "item": [
+        {
+          "name": "Device Current Data",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceSn\": \"{{deviceSn}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/device/v1.0/currentData?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["device", "v1.0", "currentData"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 3.3. Latest readings as `dataList` of {key, value, unit, name} (PV voltages/currents, AC output, temperatures, battery, daily/total yield), plus deviceState (1 online, 2 alarm, 3 offline) and collectionTime."
+          }
+        },
+        {
+          "name": "Device History - Last 24h (frames)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceSn\": \"{{deviceSn}}\",\n  \"timeType\": 5,\n  \"startTime\": \"{{_dayAgoTs}}\",\n  \"endTime\": \"{{_nowTs}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/device/v1.0/historical?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["device", "v1.0", "historical"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 3.4. Device history has no timeType 1. Frames use timeType 5 with startTime/endTime as 10-digit Unix-second strings, at most 86400 seconds apart. The response has `paramDataList` [{collectTime, dataList[{key, value, unit, name}]}]."
+          }
+        },
+        {
+          "name": "Device History - Daily (last 30 days)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceSn\": \"{{deviceSn}}\",\n  \"timeType\": 2,\n  \"startTime\": \"{{_days29Ago}}\",\n  \"endTime\": \"{{_today}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/device/v1.0/historical?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["device", "v1.0", "historical"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 3.4. timeType 2 daily (yyyy-MM-dd, max 30 days), 3 monthly (yyyy-MM, max 12), 4 yearly (yyyy)."
+          }
+        },
+        {
+          "name": "Device Alerts (last 7 days)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const alerts = pm.response.json().alertList || [];",
+                  "if (alerts.length) {",
+                  "    pm.environment.set('alertId', String(alerts[0].alertId));",
+                  "    console.log('Saved alertId', alerts[0].alertId, alerts[0].alertName);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceSn\": \"{{deviceSn}}\",\n  \"startTimestamp\": {{_weekAgoTs}},\n  \"endTimestamp\": {{_nowTs}},\n  \"page\": 1,\n  \"size\": 20\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/device/v1.0/alertList?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["device", "v1.0", "alertList"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 3.2. Raw alarm records for the device. Timestamps are Unix seconds, max range 3 months. Saves the first `alertId` for **Device Alert Detail**."
+          }
+        },
+        {
+          "name": "Device Alert Detail",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceSn\": \"{{deviceSn}}\",\n  \"alertId\": {{alertId}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/device/v1.0/alertDetail?language=en",
+              "host": ["{{baseUrl}}"],
+              "path": ["device", "v1.0", "alertDetail"],
+              "query": [{ "key": "language", "value": "en" }]
+            },
+            "description": "Doc 3.1. Detail for one alarm. Run **Device Alerts** first so `alertId` is set."
+          }
+        }
+      ]
+    }
+  ]
+}
